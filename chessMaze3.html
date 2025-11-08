@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laberinto del Rey</title>
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Carga de Font Awesome para los íconos de ajedrez (v6) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <!-- Carga de Tone.js para manejo de audio/música -->
+    <script src="https://cdn.jsdelivr.net/npm/tone@14.7.58/build/Tone.min.js"></script>
+    <style>
+        /* Fuente y estilos generales para un look de tablero */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1e293b; /* Slate-800 */
+        }
+        .board-container {
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.5);
+            border: 8px solid #334155; /* Slate-700 */
+            max-width: fit-content; /* Ajustar al tamaño del tablero */
+        }
+        .square {
+            position: relative; /* Necesario para posicionar piezas relativas */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            width: 70px; /* Tamaño de la casilla */
+            height: 70px; /* Tamaño de la casilla */
+            transition: background-color 0.1s ease, transform 0.05s;
+            user-select: none; /* Prevenir selección de texto */
+        }
+        /* Colores sugeridos: Gris oscuro y azul real */
+        .light {
+            background-color: #d1d5db; /* Gris claro suave (Gray-300) */
+        }
+        .dark {
+            background-color: #3b82f6; /* Azul real (Blue-500) */
+        }
+        /* Clases de interacción */
+        .square:hover:not(.threat):not(.enemy-piece-container) {
+            cursor: pointer;
+            transform: scale(1.02);
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        .threat {
+            background-color: #ff5555 !important; /* Casilla amenazada (Rojo más fuerte) */
+            opacity: 0.9;
+        }
+
+        /* Nuevo estilo para la animación de penalización */
+        .penalty-flash {
+            animation: flash-red-black 0.4s 3 alternate; /* 3 destellos */
+        }
+        
+        @keyframes flash-red-black {
+            0% { background-color: #ff5555; } /* Rojo (Threat) */
+            100% { background-color: #1e293b; } /* Negro/Oscuro (Base) */
+        }
+
+        .start {
+            background-color: #8aff8a; /* Verde para el inicio */
+        }
+        .goal {
+            background-color: #8888ff; /* Azul para el objetivo */
+        }
+        
+        /* Estilo general para las piezas Font Awesome (tamaño 2.5rem = 40px) */
+        .piece-icon {
+            font-size: 2.5rem; 
+            line-height: 1; 
+        }
+
+        /* Estilo de color para el Rey (blanco) */
+        .king-piece {
+            color: white; 
+            text-shadow: none; 
+            /* Habilitar transición CSS para el movimiento */
+            transition: transform 0.2s ease-in-out;
+            /* El Rey debe ser absoluto dentro de su casilla (para que se pueda mover) */
+            position: absolute; 
+            z-index: 10;
+        }
+
+        /* Clase para el efecto de error (Penalización Visual) */
+        .error-shake {
+            animation: shake 0.2s ease-in-out;
+        }
+        @keyframes shake {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            50% { transform: translateX(5px); }
+            75% { transform: translateX(-5px); }
+            100% { transform: translateX(0); }
+        }
+
+        /* Estilo de color para las piezas enemigas (oscuras) */
+        .enemy-piece {
+            color: #1e293b; /* Muy oscuro (Slate-800) */
+        }
+
+        .message-box {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 100;
+        }
+
+        /* Estilo para los botones de control direccional */
+        .control-grid {
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+        }
+        .control-button {
+            padding: 8px;
+            font-size: 24px;
+            cursor: pointer;
+            border-radius: 8px;
+            margin: 2px;
+            background-color: #4f46e5; /* Indigo-600 */
+            color: white;
+            transition: background-color 0.15s;
+        }
+        .control-button:hover {
+            background-color: #6366f1; /* Indigo-500 */
+        }
+        
+        /* Ocultar botones direccionales si se usa el clic para el movimiento */
+        #controlPanel {
+            display: none; 
+        }
+
+        /* Estilos para el selector de dificultad */
+        .difficulty-radio input:checked + label {
+            background-color: #10b981; /* Emerald-500 */
+            border-color: #10b981;
+            color: white;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+    <!-- Script de partículas (Confetti) -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+</head>
+<body class="p-4 flex flex-col items-center justify-center min-h-screen">
+
+    <!-- Encabezado del Juego -->
+    <header class="text-center mb-6">
+        <h1 class="text-4xl font-extrabold text-white mb-2">Laberinto del Rey</h1>
+        <p class="text-lg text-gray-300">Guía al Rey (<i class="fas fa-chess-king text-white"></i>) hasta el Objetivo (<span class="text-indigo-300">🎯</span>) casilla por casilla.</p>
+        <p class="text-md font-semibold text-yellow-300">¡Cuidado con las zonas de peligro!</p>
+    </header>
+    
+    <!-- Contadores de Juego -->
+    <div id="statsContainer" class="mb-6 flex space-x-8 text-white bg-gray-700 p-3 rounded-xl shadow-lg">
+        <!-- Vidas del Rey -->
+        <div class="text-center">
+            <p class="text-sm font-light text-gray-400">Vidas</p>
+            <p id="livesDisplay" class="text-2xl font-bold text-red-500">❤️❤️❤️</p>
+        </div>
+        <!-- Victorias Totales -->
+        <div class="text-center">
+            <p class="text-sm font-light text-gray-400">Victorias Totales</p>
+            <p id="winCountDisplay" class="text-2xl font-bold text-emerald-400">0</p>
+        </div>
+        <!-- Racha Actual -->
+        <div class="text-center">
+            <p class="text-sm font-light text-gray-400">Racha Actual</p>
+            <p id="streakDisplay" class="text-2xl font-bold text-pink-400">0</p>
+        </div>
+        <!-- Contador de Movimientos -->
+        <div class="text-center">
+            <p class="text-sm font-light text-gray-400">Movimientos</p>
+            <p id="moveCountDisplay" class="text-2xl font-bold text-yellow-400">0</p>
+        </div>
+    </div>
+    
+    <!-- Controles de Dificultad y Sonido -->
+    <div class="mb-6 flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-8">
+        <!-- Selector de Dificultad -->
+        <div class="difficulty-radio bg-gray-700 p-2 rounded-xl shadow-lg">
+            <p class="text-sm font-semibold text-gray-300 mb-1">Dificultad:</p>
+            <div id="difficultySelector" class="flex space-x-2">
+                <input type="radio" id="easy" name="difficulty" value="easy" class="hidden" checked>
+                <label for="easy" class="px-3 py-1 text-sm font-medium text-gray-300 bg-gray-600 rounded-lg cursor-pointer transition-colors border border-transparent">Fácil</label>
+                
+                <input type="radio" id="normal" name="difficulty" value="normal" class="hidden">
+                <label for="normal" class="px-3 py-1 text-sm font-medium text-gray-300 bg-gray-600 rounded-lg cursor-pointer transition-colors border border-transparent">Normal</label>
+                
+                <input type="radio" id="hard" name="difficulty" value="hard" class="hidden">
+                <label for="hard" class="px-3 py-1 text-sm font-medium text-gray-300 bg-gray-600 rounded-lg cursor-pointer transition-colors border border-transparent">Difícil</label>
+            </div>
+        </div>
+
+        <!-- Botón de Sonido -->
+        <button id="soundToggleButton" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-lg shadow-lg transition duration-150 ease-in-out transform hover:scale-105">
+            <span id="soundIcon">🔇</span> Sonido Off
+        </button>
+    </div>
+
+    <!-- Contenedor del Tablero -->
+    <div id="boardContainer" class="board-container rounded-lg">
+        <!-- El tablero se insertará aquí con JavaScript -->
+    </div>
+
+    <!-- Controles Adicionales (Movimiento Táctil Oculto) -->
+    <div class="mt-6 text-center flex flex-col items-center space-y-4 w-full max-w-xs">
+        <p class="text-xl font-bold text-white">Mueve al Rey (Clic/Táctil o Teclado)</p>
+        
+        <!-- Panel de control táctil/teclado, oculto para priorizar el clic directo en la casilla -->
+        <div id="controlPanel" class="grid control-grid w-full">
+            <button class="control-button" data-dir="UP_LEFT">↖</button>
+            <button class="control-button" data-dir="UP">↑</button>
+            <button class="control-button" data-dir="UP_RIGHT">↗</button>
+            
+            <button class="control-button" data-dir="LEFT">←</button>
+            <button class="control-button bg-gray-700 hover:bg-gray-700 cursor-default" disabled></button>
+            <button class="control-button" data-dir="RIGHT">→</button>
+            
+            <button class="control-button" data-dir="DOWN_LEFT">↙</button>
+            <button class="control-button" data-dir="DOWN">↓</button>
+            <button class="control-button" data-dir="DOWN_RIGHT">↘</button>
+        </div>
+        
+        <div class="flex space-x-4 mt-4">
+            <button id="restartButton" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded-lg shadow-lg transition duration-150 ease-in-out transform hover:scale-105">
+                Nuevo Laberinto
+            </button>
+            <button id="threatButton" class="bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold py-2 px-6 rounded-lg shadow-lg transition duration-150 ease-in-out transform hover:scale-105">
+                Señalar Amenazas
+            </button>
+        </div>
+        <p id="threatMessage" class="text-sm text-yellow-300 hidden">Amenazas visibles por 3 segundos.</p>
+    </div>
+
+    <!-- Ventana de Mensajes (Modal) -->
+    <div id="messageModal" class="hidden message-box bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm text-center border-4 border-indigo-500">
+        <h2 id="messageTitle" class="text-3xl font-bold mb-4 text-indigo-600"></h2>
+        <p id="messageText" class="text-lg text-gray-700 mb-6"></p>
+        <button id="closeModalButton" class="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg">
+            Cerrar
+        </button>
+    </div>
+
+    <script type="module">
+        // --- CONSTANTES Y CONFIGURACIÓN ---
+        
+        const PIECES = {
+            KING: 'fa-chess-king', 
+            QUEEN: 'fa-chess-queen', 
+            ROOK: 'fa-chess-rook',
+            BISHOP: 'fa-chess-bishop',
+            KNIGHT: 'fa-chess-knight',
+            GOAL_SYMBOL: '🎯' 
+        };
+
+        const INITIAL_LIVES = 3; 
+        const MOVE_ANIMATION_DURATION_MS = 200; 
+        const PENALTY_FLASH_DURATION_MS = 1200; // Duración total del parpadeo
+
+        const DIFFICULTY_SETTINGS = {
+            easy: { N: 5, ENEMY_COUNT: 3, MIN_STEPS: 3, ENEMY_TYPES: [PIECES.QUEEN, PIECES.BISHOP], INITIAL_ENEMY_COUNT: 3 },
+            normal: { N: 7, ENEMY_COUNT: 5, MIN_STEPS: 6, ENEMY_TYPES: [PIECES.QUEEN, PIECES.BISHOP, PIECES.ROOK, PIECES.KNIGHT], INITIAL_ENEMY_COUNT: 5 },
+            hard: { N: 8, ENEMY_COUNT: 8, MIN_STEPS: 7, ENEMY_TYPES: [PIECES.QUEEN, PIECES.BISHOP, PIECES.ROOK, PIECES.KNIGHT], INITIAL_ENEMY_COUNT: 8 }
+        };
+
+        const MAX_ATTEMPTS = 500; 
+        const HELP_DURATION_MS = 3000; 
+
+        // --- VARIABLES DE ESTADO ---
+        let currentSettings; 
+        let N; 
+        let ENEMY_COUNT; 
+        let threatMap;
+        let kingPos; 
+        let previousKingPos; 
+        let goalPos;
+        let enemies;
+        let gameActive = true;
+        let threatTimeout = null;
+        let soundEnabled = localStorage.getItem('soundEnabled') === 'true'; 
+        let lives = INITIAL_LIVES; 
+        
+        let winCount = 0;
+        let winStreak = 0;
+        let currentDifficulty = 'easy'; 
+        let moveCount = 0; 
+        let isAnimating = false; 
+
+        // --- ELEMENTOS DEL DOM ---
+        const boardContainer = document.getElementById('boardContainer');
+        const restartButton = document.getElementById('restartButton');
+        const threatButton = document.getElementById('threatButton'); 
+        const threatMessage = document.getElementById('threatMessage');
+        const messageModal = document.getElementById('messageModal');
+        const messageTitle = document.getElementById('messageTitle');
+        const messageText = document.getElementById('messageText');
+        const closeModalButton = document.getElementById('closeModalButton');
+        const controlPanel = document.getElementById('controlPanel');
+        const soundToggleButton = document.getElementById('soundToggleButton');
+        const soundIcon = document.getElementById('soundIcon');
+        const difficultySelector = document.getElementById('difficultySelector');
+        const winCountDisplay = document.getElementById('winCountDisplay');
+        const streakDisplay = document.getElementById('streakDisplay');
+        const moveCountDisplay = document.getElementById('moveCountDisplay'); 
+        const livesDisplay = document.getElementById('livesDisplay'); 
+
+        // --- CONFIGURACIÓN DE AUDIO (TONE.JS) ---
+        
+        const moveSynth = new Tone.Synth({
+            oscillator: { type: "square" },
+            envelope: { attack: 0.005, decay: 0.1, sustain: 0, release: 0.1 }
+        }).toDestination();
+        
+        const errorSynth = new Tone.MetalSynth({
+            frequency: 100, 
+            envelope: { attack: 0.001, decay: 0.4, release: 0.2 },
+            harmonicity: 3.1, 
+            modulationIndex: 10,
+            resonance: 800,
+            octaves: 1.5
+        }).toDestination();
+
+        const lifeLossSynth = new Tone.MembraneSynth({
+            pitchDecay: 0.05,
+            octaves: 2,
+            envelope: { attack: 0.001, decay: 0.6, sustain: 0.01, release: 0.7, }
+        }).toDestination();
+
+        const victorySequence = new Tone.Sequence(
+            (time, note) => { moveSynth.triggerAttackRelease(note, "8n", time); },
+            ["C5", "E5", "G5", "C6"], "8n" 
+        ); 
+        victorySequence.loop = false;
+        
+        Tone.Transport.bpm.value = 120; 
+
+        function ensureAudioContext() {
+            if (soundEnabled && Tone.context.state !== 'running') {
+                Tone.start();
+            }
+        }
+
+        function playMovementSound() {
+            if (soundEnabled) {
+                ensureAudioContext();
+                moveSynth.triggerAttackRelease("G4", "16n");
+            }
+        }
+        
+        function playInvalidMoveSound() {
+            if (soundEnabled) {
+                ensureAudioContext();
+                errorSynth.triggerAttackRelease("A2", 0.1, Tone.context.currentTime, 0.5); 
+            }
+        }
+
+        function playErrorFeedback() {
+            if (soundEnabled) {
+                ensureAudioContext();
+                const now = Tone.context.currentTime;
+                errorSynth.triggerAttackRelease("C3", 0.2, now, 1); 
+                lifeLossSynth.triggerAttackRelease("G0", 0.4, now + 0.1); 
+            }
+        }
+        
+        function playVictoryMusic() {
+            if (soundEnabled) {
+                ensureAudioContext();
+                Tone.Transport.stop(); 
+                Tone.Transport.cancel();
+                victorySequence.stop();
+                Tone.Transport.start();
+                victorySequence.start("+0.1"); 
+            }
+        }
+
+        function playGameOverMusic() {
+            if (soundEnabled) {
+                ensureAudioContext();
+                Tone.Transport.stop();
+                Tone.Transport.cancel();
+                const somberNotes = ["F#3", "C3", "B2", "F2"];
+                let timeOffset = 0;
+                const noteDuration = "0.7n"; 
+                const advanceTime = "1n"; 
+
+                somberNotes.forEach((note) => {
+                    Tone.Transport.schedule((time) => {
+                        moveSynth.triggerAttackRelease(note, noteDuration, time, 1.0); 
+                    }, Tone.Time(timeOffset).toSeconds()); 
+                    
+                    timeOffset += Tone.Time(advanceTime).toSeconds();
+                });
+                
+                Tone.Transport.start();
+                Tone.Transport.scheduleOnce(() => {
+                    Tone.Transport.stop();
+                }, Tone.Time(timeOffset).toSeconds() + 0.5); 
+            }
+        }
+
+
+        function launchConfetti() {
+            confetti({
+                particleCount: 150,
+                spread: 120,
+                origin: { y: 0.6 }
+            });
+        }
+
+
+        // --- FUNCIONES DE UTILIDAD DE AJEDREZ ---
+
+        function isWithinBounds(x, y) {
+            return x >= 0 && x < N && y >= 0 && y < N;
+        }
+
+        function calculateThreatMap(currentEnemies) {
+            const map = Array.from({ length: N }, () => Array(N).fill(false));
+
+            for (const enemy of currentEnemies) {
+                map[enemy.y][enemy.x] = true; 
+
+                switch (enemy.type) {
+                    case PIECES.QUEEN:
+                    case PIECES.ROOK: 
+                        if (enemy.type === PIECES.QUEEN || enemy.type === PIECES.ROOK) {
+                            for (let d = 0; d < 4; d++) {
+                                const dx = [1, -1, 0, 0][d];
+                                const dy = [0, 0, 1, -1][d];
+                                for (let i = 1; i < N; i++) {
+                                    const tx = enemy.x + i * dx;
+                                    const ty = enemy.y + i * dy;
+                                    if (isWithinBounds(tx, ty)) {
+                                        map[ty][tx] = true;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    case PIECES.BISHOP:
+                        if (enemy.type === PIECES.QUEEN || enemy.type === PIECES.BISHOP) {
+                            for (let d = 0; d < 4; d++) {
+                                const dx = [1, 1, -1, -1][d];
+                                const dy = [1, -1, 1, -1][d];
+                                for (let i = 1; i < N; i++) {
+                                    const tx = enemy.x + i * dx;
+                                    const ty = enemy.y + i * dy;
+                                    if (isWithinBounds(tx, ty)) {
+                                        map[ty][tx] = true;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    case PIECES.KNIGHT:
+                        const knightMoves = [
+                            [2, 1], [2, -1], [-2, 1], [-2, -1],
+                            [1, 2], [1, -2], [-1, 2], [-1, -2]
+                        ];
+                        for (const [dx, dy] of knightMoves) {
+                            const tx = enemy.x + dx;
+                            const ty = enemy.y + dy;
+                            if (isWithinBounds(tx, ty)) {
+                                map[ty][tx] = true;
+                            }
+                        }
+                        break;
+                }
+            }
+            return map;
+        }
+
+        function getKingMoves(x, y) {
+            const moves = [];
+            const directions = [
+                { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, 
+                { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
+                { dx: 1, dy: 1 }, { dx: 1, dy: -1 }, 
+                { dx: -1, dy: 1 }, { dx: -1, dy: -1 } 
+            ];
+
+            for (const { dx, dy } of directions) {
+                const nx = x + dx;
+                const ny = y + dy;
+
+                if (isWithinBounds(nx, ny)) {
+                    moves.push({ x: nx, y: ny });
+                }
+            }
+            return moves;
+        }
+
+        function findShortestPathLength(start, goal, threats) {
+            if (threats[start.y][start.x] || threats[goal.y][goal.x]) {
+                return null; 
+            }
+
+            const queue = [{ x: start.x, y: start.y, dist: 0 }];
+            const visited = new Set([`${start.x},${start.y}`]);
+
+            while (queue.length > 0) {
+                const current = queue.shift();
+
+                if (current.x === goal.x && current.y === goal.y) {
+                    return current.dist; 
+                }
+                
+                const possibleMoves = getKingMoves(current.x, current.y); 
+
+                for (const move of possibleMoves) {
+                    const { x: nx, y: ny } = move;
+                    const key = `${nx},${ny}`;
+
+                    if (!threats[ny][nx] && !visited.has(key)) {
+                        visited.add(key);
+                        queue.push({ x: nx, y: ny, dist: current.dist + 1 });
+                    }
+                }
+            }
+            return null; 
+        }
+
+
+        // --- FUNCIONES PRINCIPALES DEL JUEGO ---
+
+        function loadStats() {
+            const storedWins = localStorage.getItem('chessMazeWins');
+            winCount = storedWins ? parseInt(storedWins, 10) : 0;
+            
+            winStreak = 0; 
+            moveCount = 0; 
+            lives = INITIAL_LIVES; 
+            
+            currentDifficulty = document.querySelector('input[name="difficulty"]:checked').value;
+
+            updateStatsDisplay();
+        }
+
+        function updateStatsDisplay() {
+            if (winCountDisplay) winCountDisplay.textContent = winCount;
+            if (streakDisplay) streakDisplay.textContent = winStreak;
+            if (moveCountDisplay) moveCountDisplay.textContent = moveCount; 
+            
+            if (livesDisplay) {
+                livesDisplay.innerHTML = '❤️'.repeat(lives) + (lives < INITIAL_LIVES ? '💔'.repeat(INITIAL_LIVES - lives) : '');
+            }
+        }
+
+        function saveWinCount() {
+            localStorage.setItem('chessMazeWins', winCount.toString());
+        }
+
+        function showMessage(title, text, type) {
+            messageTitle.textContent = title;
+            messageText.textContent = text;
+            
+            messageModal.classList.remove('hidden');
+            if (type !== 'win') {
+                 Tone.Transport.stop(); 
+            }
+            document.removeEventListener('keydown', handleKeydown); 
+        }
+        
+        function hideMessage() {
+            messageModal.classList.add('hidden');
+            if (soundEnabled && gameActive) {
+                ensureAudioContext();
+                Tone.Transport.start();
+            }
+            if (gameActive) {
+                 document.addEventListener('keydown', handleKeydown);
+            }
+        }
+
+        function showThreatsTemporarily() {
+            if (threatTimeout) {
+                clearTimeout(threatTimeout);
+            }
+
+            for (let y = 0; y < N; y++) {
+                for (let x = 0; x < N; x++) {
+                    if (threatMap[y][x]) {
+                        const squareElement = document.getElementById(`square-${x}-${y}`);
+                        if (squareElement) {
+                            squareElement.classList.add('threat');
+                        }
+                    }
+                }
+            }
+            threatMessage.classList.remove('hidden');
+
+            threatTimeout = setTimeout(() => {
+                hideThreats();
+            }, HELP_DURATION_MS);
+        }
+
+        function hideThreats() {
+            for (let y = 0; y < N; y++) {
+                for (let x = 0; x < N; x++) {
+                    const squareElement = document.getElementById(`square-${x}-${y}`);
+                    if (squareElement) {
+                        squareElement.classList.remove('threat');
+                    }
+                }
+            }
+            threatMessage.classList.add('hidden');
+            clearTimeout(threatTimeout);
+            threatTimeout = null;
+        }
+
+        function updateDifficulty() {
+            const selectedDifficulty = document.querySelector('input[name="difficulty"]:checked').value;
+            currentSettings = { ...DIFFICULTY_SETTINGS[selectedDifficulty] };
+            N = currentSettings.N;
+            ENEMY_COUNT = currentSettings.ENEMY_COUNT;
+        }
+        
+        function generateNewBoard() {
+            hideThreats(); 
+            
+            const selectedDifficulty = document.querySelector('input[name="difficulty"]:checked').value;
+
+            if (selectedDifficulty !== currentDifficulty || gameActive) {
+                winStreak = 0;
+            }
+            currentDifficulty = selectedDifficulty; 
+            
+            updateDifficulty();
+            moveCount = 0; 
+            lives = INITIAL_LIVES; 
+            
+            let MIN_STEPS = currentSettings.MIN_STEPS;
+            const ENEMY_TYPES_LOCAL = currentSettings.ENEMY_TYPES;
+            let currentEnemyCount = currentSettings.ENEMY_COUNT; 
+
+            let pathLength = null;
+            let attempts = 0;
+            const maxCoords = N * N;
+
+            const generateUniqueCoord = (existingPositions) => {
+                let x, y, key;
+                do {
+                    x = Math.floor(Math.random() * N);
+                    y = Math.floor(Math.random() * N);
+                    key = `${x},${y}`;
+                } while (existingPositions.has(key));
+                existingPositions.add(key);
+                return { x, y, key };
+            };
+
+            while (pathLength === null || pathLength < MIN_STEPS) {
+                
+                if (attempts >= MAX_ATTEMPTS) {
+                    if (currentEnemyCount > 1) { 
+                        currentEnemyCount--;
+                        attempts = 0; 
+                        if (currentDifficulty === 'hard' && MIN_STEPS > 4) {
+                            MIN_STEPS--; 
+                        }
+                    } else {
+                        console.error("No se pudo generar un laberinto jugable.");
+                        showMessage(
+                            "¡Error Crítico!", 
+                            `No se pudo crear un laberinto jugable.`, 
+                            'loss'
+                        );
+                        gameActive = false;
+                        return;
+                    }
+                }
+
+                attempts++;
+                const occupiedPositions = new Set();
+
+                const startCoord = generateUniqueCoord(occupiedPositions);
+                const goalCoord = generateUniqueCoord(occupiedPositions);
+                
+                kingPos = { x: startCoord.x, y: startCoord.y };
+                previousKingPos = { ...kingPos }; 
+                goalPos = { x: goalCoord.x, y: goalCoord.y };
+                
+                enemies = [];
+                let placedCount = 0;
+                while (placedCount < currentEnemyCount && occupiedPositions.size < maxCoords) {
+                    const { x, y, key } = generateUniqueCoord(occupiedPositions);
+                    const type = ENEMY_TYPES_LOCAL[Math.floor(Math.random() * ENEMY_TYPES_LOCAL.length)];
+                    
+                    enemies.push({ type, x, y });
+                    placedCount++;
+                }
+
+                threatMap = calculateThreatMap(enemies);
+                pathLength = findShortestPathLength(kingPos, goalPos, threatMap);
+            }
+            
+            console.log(`Laberinto generado con éxito. (Pasos Mín: ${pathLength}).`);
+
+            gameActive = true;
+            isAnimating = false; 
+            updateStatsDisplay(); 
+            drawGame();
+        }
+
+        function handleSquareClick(event) {
+            if (!gameActive || isAnimating) return; 
+
+            const square = event.target.closest('.square');
+            if (!square) return;
+
+            const idParts = square.id.split('-');
+            const clickedX = parseInt(idParts[1], 10);
+            const clickedY = parseInt(idParts[2], 10);
+
+            const dx = Math.abs(clickedX - kingPos.x);
+            const dy = Math.abs(clickedY - kingPos.y);
+
+            const isKingMove = (dx <= 1 && dy <= 1) && (dx !== 0 || dy !== 0);
+
+            if (isKingMove) {
+                let finalDx = clickedX - kingPos.x;
+                let finalDy = clickedY - kingPos.y;
+                
+                let direction = null;
+
+                if (finalDy === -1) {
+                    if (finalDx === 0) direction = 'UP';
+                    else if (finalDx === -1) direction = 'UP_LEFT';
+                    else if (finalDx === 1) direction = 'UP_RIGHT';
+                } else if (finalDy === 1) {
+                    if (finalDx === 0) direction = 'DOWN';
+                    else if (finalDx === -1) direction = 'DOWN_LEFT';
+                    else if (finalDx === 1) direction = 'DOWN_RIGHT';
+                } else if (finalDy === 0) {
+                    if (finalDx === -1) direction = 'LEFT';
+                    else if (finalDx === 1) direction = 'RIGHT';
+                }
+
+                if (direction) {
+                    moveKing(direction, { x: clickedX, y: clickedY });
+                }
+            } else if (dx === 0 && dy === 0) {
+                 // Clic en la propia casilla del rey, ignorar
+            } else {
+                applyErrorFeedback(false); 
+            }
+        }
+        
+        function applyErrorFeedback(lifeLost = true, targetX = null, targetY = null) {
+             const kingElement = document.querySelector('.king-piece');
+            if (kingElement) {
+                kingElement.classList.add('error-shake');
+                setTimeout(() => {
+                    kingElement.classList.remove('error-shake');
+                }, 200);
+            }
+            
+            if (lifeLost) {
+                playErrorFeedback(); 
+                
+                // Si se pierde vida, hacer parpadear la casilla peligrosa
+                if (targetX !== null && targetY !== null) {
+                    const squareElement = document.getElementById(`square-${targetX}-${targetY}`);
+                    if (squareElement) {
+                        squareElement.classList.add('penalty-flash');
+                        
+                        setTimeout(() => {
+                            squareElement.classList.remove('penalty-flash');
+                            // Redibujar si es necesario para restaurar el color base o threat
+                            drawGame(); 
+                        }, PENALTY_FLASH_DURATION_MS);
+                    }
+                }
+                
+            } else {
+                playInvalidMoveSound(); 
+            }
+        }
+
+        /**
+         * Renderiza el estado actual del tablero en el HTML.
+         */
+        function drawGame() {
+            boardContainer.innerHTML = ''; 
+            boardContainer.style.gridTemplateColumns = `repeat(${N}, 1fr)`;
+            boardContainer.classList.add('grid');
+            
+            const threatsVisible = threatTimeout !== null;
+            
+            boardContainer.removeEventListener('click', handleSquareClick);
+            boardContainer.addEventListener('click', handleSquareClick);
+
+
+            for (let y = 0; y < N; y++) {
+                for (let x = 0; x < N; x++) {
+                    const square = document.createElement('div');
+                    square.id = `square-${x}-${y}`; 
+                    square.classList.add('square');
+                    
+                    const isLight = (x + y) % 2 === 0;
+                    square.classList.add(isLight ? 'light' : 'dark');
+
+                    // No añadir 'threat' si hay una animación de parpadeo activa
+                    if (threatsVisible && threatMap[y][x]) {
+                        square.classList.add('threat');
+                    }
+                    
+                    if (x === kingPos.x && y === kingPos.y) {
+                        // Rey
+                        square.classList.add('start');
+                        // Asegurar que el Rey está centrado y sin offset de transformación
+                        square.innerHTML = `<i class="fas ${PIECES.KING} piece-icon king-piece" style="transform: translate(0, 0);"></i>`; 
+                    } else if (x === goalPos.x && y === goalPos.y) {
+                        square.classList.add('goal');
+                        square.innerHTML = `<span class="text-3xl">${PIECES.GOAL_SYMBOL}</span>`; 
+                    } else {
+                        const enemy = enemies.find(e => e.x === x && e.y === y);
+                        if (enemy) {
+                            // Enemigo
+                            square.innerHTML = `<i class="fas ${enemy.type} piece-icon enemy-piece"></i>`; 
+                            square.classList.add('enemy-piece-container');
+                        }
+                    }
+
+                    boardContainer.appendChild(square);
+                }
+            }
+        }
+        
+        /**
+         * Realiza la animación del movimiento del Rey usando CSS transform.
+         */
+        async function animateKingMove(newX, newY) {
+            isAnimating = true;
+            
+            const kingElement = document.querySelector('.king-piece');
+            
+            if (!kingElement) {
+                console.error("No se encontró la pieza del rey.");
+                isAnimating = false;
+                return;
+            }
+
+            // 1. Calcular el desplazamiento en píxeles (tamaño de la casilla: 70px)
+            const dx = newX - kingPos.x;
+            const dy = newY - kingPos.y;
+            const offsetX = dx * 70;
+            const offsetY = dy * 70;
+            
+            // 2. Aplicar la transformación CSS
+            kingElement.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
+            
+            // 3. Esperar a que termine la animación
+            await new Promise(resolve => setTimeout(resolve, MOVE_ANIMATION_DURATION_MS));
+            
+            // 4. Actualizar la posición de estado del Rey
+            previousKingPos = { ...kingPos }; 
+            kingPos = { x: newX, y: newY };
+            
+            // 5. Redibujar el tablero (El Rey aparecerá en la nueva casilla sin la transformación)
+            drawGame();
+            
+            isAnimating = false;
+        }
+
+
+        /**
+         * Mueve al Rey (una casilla) según la dirección indicada.
+         */
+        function moveKing(direction, targetCoords = null) {
+            if (!gameActive || isAnimating) return;
+
+            let dx = 0;
+            let dy = 0;
+
+            switch (direction) {
+                case 'UP': dy = -1; break;
+                case 'DOWN': dy = 1; break;
+                case 'LEFT': dx = -1; break;
+                case 'RIGHT': dx = 1; break;
+                case 'UP_LEFT': dx = -1; dy = -1; break;
+                case 'UP_RIGHT': dx = 1; dy = -1; break;
+                case 'DOWN_LEFT': dx = -1; dy = 1; break;
+                case 'DOWN_RIGHT': dx = 1; dy = 1; break;
+                default: return;
+            }
+
+            const newX = kingPos.x + dx;
+            const newY = kingPos.y + dy;
+            
+            if (!isWithinBounds(newX, newY)) {
+                applyErrorFeedback(false); 
+                return;
+            }
+            
+            // --- Lógica de Vidas y Amenaza ---
+            if (threatMap[newY][newX]) {
+                lives--;
+                
+                // 1. Mostrar feedback visual y de sonido en la casilla peligrosa
+                applyErrorFeedback(true, newX, newY); 
+
+                if (lives <= 0) {
+                    gameActive = false;
+                    winStreak = 0; 
+                    playGameOverMusic(); 
+                    updateStatsDisplay();
+                    showMessage(
+                        "¡Derrota del Rey!", 
+                        `El Rey ha perdido todas sus vidas. Inténtalo de nuevo.`, 
+                        'loss'
+                    );
+                    return;
+                }
+                
+                // 2. Vuelve inmediatamente a la posición anterior segura
+                kingPos = { ...previousKingPos }; 
+                updateStatsDisplay();
+                
+                // Esperar la duración de la animación de penalización antes de permitir otro movimiento
+                isAnimating = true; 
+                setTimeout(() => {
+                    isAnimating = false;
+                    drawGame(); // Asegurar que el tablero se redibuja limpiamente
+                }, PENALTY_FLASH_DURATION_MS);
+                
+                return;
+            }
+            
+            // Movimiento Válido: Iniciar la animación
+            animateKingMove(newX, newY).then(() => {
+                // Estas acciones se ejecutan *después* de que la animación ha terminado
+                
+                moveCount++; 
+                playMovementSound();
+                
+                hideThreats();
+                updateStatsDisplay(); 
+                
+                // Verificar si ganó
+                if (kingPos.x === goalPos.x && kingPos.y === goalPos.y) {
+                    gameActive = false;
+                    
+                    launchConfetti();
+                    playVictoryMusic(); 
+                    
+                    winCount++;
+                    winStreak++;
+                    saveWinCount();
+                    updateStatsDisplay();
+                    
+                    showMessage("¡Victoria del Rey!", `¡Has llegado al objetivo en ${moveCount} movimientos con ${lives} vidas restantes!`, 'win');
+                }
+            });
+        }
+
+        function handleKeydown(event) {
+            if (!gameActive || isAnimating) return; 
+
+            let direction = null;
+            
+            const key = event.key.toLowerCase(); 
+
+            switch (key) {
+                case 'arrowup': 
+                case 'w': direction = 'UP'; break;
+                case 'arrowdown':
+                case 's': direction = 'DOWN'; break;
+                case 'arrowleft': 
+                case 'a': direction = 'LEFT'; break;
+                case 'arrowright': 
+                case 'd': direction = 'RIGHT'; break;
+                case 'q': direction = 'UP_LEFT'; break;
+                case 'e': direction = 'UP_RIGHT'; break;
+                case 'z': direction = 'DOWN_LEFT'; break;
+                case 'c': direction = 'DOWN_RIGHT'; break;
+            }
+            
+            if (direction) {
+                event.preventDefault();
+                moveKing(direction);
+            }
+        }
+        
+        function handleControlClick(event) {
+            const button = event.target.closest('.control-button');
+            if (button) {
+                const direction = button.getAttribute('data-dir');
+                if (direction) {
+                    moveKing(direction);
+                }
+            }
+        }
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            localStorage.setItem('soundEnabled', soundEnabled);
+            updateSoundButton();
+
+            if (!soundEnabled) {
+                Tone.Transport.stop(); 
+            } else {
+                if (Tone.context.state !== 'running') {
+                    Tone.start();
+                }
+                if (gameActive) {
+                    Tone.Transport.start(); 
+                }
+            }
+        }
+
+        function updateSoundButton() {
+            if (soundEnabled) {
+                soundIcon.textContent = '🔊';
+                soundToggleButton.innerHTML = `<span id="soundIcon">🔊</span> Sonido On`;
+            } else {
+                soundIcon.textContent = '🔇';
+                soundToggleButton.innerHTML = `<span id="soundIcon">🔇</span> Sonido Off`;
+            }
+        }
+
+        // --- INICIALIZACIÓN ---
+
+        window.onload = () => {
+            loadStats(); 
+            updateSoundButton();
+            document.getElementById('easy').checked = true;
+
+            generateNewBoard();
+            
+            // Event Listeners
+            document.addEventListener('keydown', handleKeydown);
+            restartButton.addEventListener('click', generateNewBoard);
+            closeModalButton.addEventListener('click', hideMessage);
+            threatButton.addEventListener('click', showThreatsTemporarily);
+            controlPanel.addEventListener('click', handleControlClick); 
+            soundToggleButton.addEventListener('click', toggleSound);
+
+            // Listener para cambios de dificultad
+            difficultySelector.addEventListener('change', () => {
+                generateNewBoard();
+            });
+            
+            // Iniciar el contexto de audio con la primera interacción del usuario
+            document.body.addEventListener('click', () => {
+                if (soundEnabled && Tone.context.state !== 'running') {
+                    Tone.start();
+                    Tone.Transport.start(); 
+                }
+            }, { once: true });
+        };
+    </script>
+</body>
+</html>
